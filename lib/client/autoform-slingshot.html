@@ -15,6 +15,7 @@
   </div>
 </template>
 
+
 <template name="afSlingshot_bootstrap3">
   <div class="form-group file-upload" data-schema-key="{{schemaKey}}" data-id="{{templateInstanceId}}">
     {{#if fileUpload}}
@@ -62,6 +63,23 @@
   {{/if}}
 </template>
 
+<template name="afSlingshot_materialize">
+  <div class="form-group file-upload" data-schema-key="{{schemaKey}}" data-id="{{templateInstanceId}}">
+    {{#if fileUpload}}
+    {{#with fileUpload}}
+    {{> Template.dynamic template=template data=data}}
+    {{/with}}
+    <br/>
+    <a class="file-upload-clear" file-input="{{name}}">{{removeLabel}}</a>
+    {{else}}
+    <label class="btn waves-effect waves-light" for="file-{{name}}-{{templateInstanceId}}">
+      {{label}}
+      <input class="hidden" id="file-{{name}}-{{templateInstanceId}}" file-input="{{name}}" type="file" accept="{{accept}}" />
+    </label>
+    {{/if}}
+  </div>
+</template>
+
 <template name="fileThumbIcon">
   <a target="_blank" href="{{src}}">
     <i class="fa fa-{{icon}}"></i> {{filename}}
@@ -82,6 +100,15 @@
 
 <template name="fileThumbImg">
   <img src="{{swapTemp src}}" alt="" class="img-fileUpload-thumbnail img-thumbnail img-rounded">
+</template>
+
+<template name="fileThumbImg_materialize">
+  {{#if progress}}
+    <div class="progress">
+      <div class="determinate" style="width: {{progress}}%"></div>
+    </div>
+  {{/if}}
+  <img src="{{swapTemp src}}" class="img-fileUpload-thumbnail img-thumbnail img-rounded">
 </template>
 
 <template name="fileThumbImg_ionic">

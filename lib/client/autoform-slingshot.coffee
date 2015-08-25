@@ -1,4 +1,4 @@
-SlingshotAutoformFileCache = new Meteor.Collection(null);
+@SlingshotAutoformFileCache = new Meteor.Collection(null);
 
 SwapTemp = (file) ->
   src = file
@@ -18,24 +18,28 @@ UI.registerHelper 'swapTemp', SwapTemp
 
 AutoForm.addInputType 'slingshotFileUpload',
   template: 'afSlingshot'
-  valueIn: (images) ->
+  valueIn: (images, atts) ->
     # Add input data into the file cache.
     t = Template.instance()
-    if t.data and typeof images == 'string' and images.length > 0
+    form = AutoForm.getCurrentDataForForm()
+    if t.data and typeof images is 'string' and images.length > 0
       SlingshotAutoformFileCache.upsert {
-        template: t.data.id
-        field: t.data.name
+        doc_id: form.doc._id
+        template: form.id
+        field: atts.name
       }, {
-        template: t.data.id
-        field: t.data.name
+        doc_id: form.doc._id
+        template: form.id
+        field: atts.name
         src: images
       }
     else
       _.each images, (image, i) ->
         if typeof image == 'string'
           schema = AutoForm.getFormSchema()
-          if schema and schema._schema and t.view.isRendered
+          if schema and schema._resolvedSchema and t.view.isRendered
             schemaKey = t.$('[data-schema-key]').data('schema-key')
+            console.log schemaKey
             if schemaKey
               # Replace ".0." with ".$."
               schemaKey = schemaKey.replace(/\.\d+\./g, '.$.')
@@ -50,32 +54,37 @@ AutoForm.addInputType 'slingshotFileUpload',
                     -a.key.localeCompare b.key
                   )
                 SlingshotAutoformFileCache.upsert {
-                  template: t.data.id
-                  field: t.data.name
+                  doc_id: form.doc._id
+                  template: form.id
+                  field: atts.name
                   directive: _directives[i].directive
                 }, {
-                  template: t.data.id
-                  field: t.data.name
+                  doc_id: form.doc._id
+                  template: form.id
+                  field: atts.name
                   directive: _directives[i].directive
                   key: _directives[i].key
                   src: image
                 }
         else
           SlingshotAutoformFileCache.upsert {
-            template: t.data.id
-            field: t.data.name
+            doc_id: form.doc._id
+            template: form.id
+            field: atts.name
             directive: image.directive
           }, _.extend(image,
-            template: t.data.id
-            field: t.data.name
+            doc_id: form.doc._id
+            template: form.id
+            field: atts.name
           )
     images
 
   valueOut: ->
     fieldName = $(@context).data('schema-key')
-    templateInstanceId = $(@context).data('id')
+    form = AutoForm.getCurrentDataForForm()
     images = SlingshotAutoformFileCache.find({
-      template: templateInstanceId
+      doc_id: form.doc._id
+      template: form.id
       field: fieldName
     }, {
       order:
@@ -135,6 +144,12 @@ uploadWith = (directive, files, name, key, instance) ->
     if file.type.indexOf('image') == 0
       urlCreator = window.URL or window.webkitURL;
       tmp = urlCreator.createObjectURL( file );
+
+    form = AutoForm.getCurrentDataForForm()
+
+    triggerAutosave = _.once ->
+      $("form##{form.id}").submit()
+
     Meteor.defer =>
       upload = uploader.send file, (err, src) ->
         # Stop tracking status when upload is done.
@@ -145,21 +160,28 @@ uploadWith = (directive, files, name, key, instance) ->
       # Wait for authorization and for transfer to start.
       statusTracking = Tracker.autorun =>
         status = upload.status()
+        progress = upload.progress()
         if status == 'transferring' and upload.instructions
+
           # Add a placeholder for the upload with a Blob data URI, aka Optimistic UI.
           SlingshotAutoformFileCache.upsert {
-            template: instance.data.atts.id
+            doc_id: form.doc._id
+            template: form.id
             field: name
             directive: directiveName
           }, {
-            template: instance.data.atts.id
+            doc_id: form.doc._id
+            template: form.id
             field: name
             key: key or ''
             directive: directiveName
             filename: file.name
             src: upload.instructions.download
+            progress: progress
             tmp: tmp
           }
+
+          triggerAutosave() if form.autosave
 
   # Send uploadCallback direcly or pass it through onBeforeUpload if available.
   _.map files, (file) ->
@@ -183,8 +205,7 @@ events =
 
     # If singe directive as object.
     else if typeof directives == 'object' and 'directive' of directives
-      uploadWith directives, files, name, null, instance
-
+      uploadWith directives, files, name, null, instance 
     # If multiple directive upload with keys.
     else if typeof directives == 'object'
       _.each directives, (directive, key) ->
@@ -192,8 +213,10 @@ events =
 
   'click .file-upload-clear': (e, instance)->
     name = $(e.currentTarget).attr('file-input')
+    form = AutoForm.getCurrentDataForForm()
     SlingshotAutoformFileCache.remove
-      template: instance.data.atts.id
+      doc_id: form.doc._id
+      template: form.id
       field: name
 
 Template['afSlingshot'].events events
@@ -204,12 +227,17 @@ Template['afSlingshot_ionic'].events _.extend(events, {
       buttons: []
       destructiveText: i18n 'destructive_text'
       cancelText: i18n 'cancel_text'
-      destructiveButtonClicked: (()->
-        SlingshotAutoformFileCache.remove({template: this.template, field: this.field});
+      destructiveButtonClicked:(->
+        form = AutoForm.getCurrentDataForForm()
+        SlingshotAutoformFileCache.remove
+          doc_id: form.doc._id
+          template: form.id
+          field: @field
         true
-      ).bind(this)
+      ).bind @
     )
 })
+Template['afSlingshot_materialize'].events events
 
 
 helpers =
@@ -231,12 +259,14 @@ helpers =
   schemaKey: ->
     @atts['data-schema-key']
   templateInstanceId: ->
-    @atts['id']
+    AutoForm.getFormId()
 
   fileUpload: ->
     t = Template.instance()
+    form = AutoForm.getCurrentDataForForm()
     select =
-      template: t.data.atts.id
+      doc_id: form.doc._id
+      template: form.id
       field: @atts.name
     # Allow selection of the directive for the thumbnail by key.
     if @atts.thumbnail
@@ -249,6 +279,7 @@ helpers =
 Template['afSlingshot'].helpers helpers
 Template['afSlingshot_ionic'].helpers helpers
 Template['afSlingshot_bootstrap3'].helpers helpers
+Template['afSlingshot_materialize'].helpers helpers
 
 thumbIconHelpers =
   filename: ->
